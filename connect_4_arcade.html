@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect 4 Arcade</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Google Fonts: Inter & Orbitron -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Orbitron', 'sans-serif'],
+          },
+          colors: {
+            neonRed: '#ff2a5f',
+            neonYellow: '#ffe600',
+            boardBg: '#0f172a',
+            boardFrame: '#1e293b',
+          },
+          boxShadow: {
+            'glow-red': '0 0 20px rgba(255, 42, 95, 0.6), 0 0 40px rgba(255, 42, 95, 0.3)',
+            'glow-yellow': '0 0 20px rgba(255, 230, 0, 0.6), 0 0 40px rgba(255, 230, 0, 0.3)',
+            'glow-cyan': '0 0 15px rgba(6, 182, 212, 0.5)',
+            'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom bounce animation for disc drop visual fallback */
+    @keyframes dropBounce {
+      0% { transform: translateY(-300px); animation-timing-function: ease-in; }
+      60% { transform: translateY(0); animation-timing-function: ease-out; }
+      75% { transform: translateY(-20px); animation-timing-function: ease-in; }
+      90% { transform: translateY(0); animation-timing-function: ease-out; }
+      95% { transform: translateY(-5px); animation-timing-function: ease-in; }
+      100% { transform: translateY(0); animation-timing-function: ease-out; }
+    }
+
+    .animate-drop {
+      animation: dropBounce 0.45s forwards;
+    }
+
+    .glass-panel {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .glass-board {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 2px solid rgba(51, 65, 85, 0.8);
+    }
+
+    /* Cell styling */
+    .hole-shadow {
+      box-shadow: inset 0 6px 10px rgba(0, 0, 0, 0.8), inset 0 -2px 4px rgba(255, 255, 255, 0.05);
+    }
+
+    /* Winning pulse animation */
+    @keyframes winPulse {
+      0%, 100% { transform: scale(1); filter: brightness(1.2); }
+      50% { transform: scale(1.08); filter: brightness(1.6); }
+    }
+
+    .winning-disc {
+      animation: winPulse 0.8s infinite ease-in-out;
+      z-index: 20;
+    }
+
+    /* Custom Scrollbar for Move History */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(71, 85, 105, 1);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-white overflow-x-hidden">
+
+  <!-- TOP BAR / HEADER -->
+  <header class="w-full border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 px-4 py-3 shadow-lg">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-yellow-400 p-0.5 shadow-glow-red">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <i data-lucide="grid" class="w-6 h-6 text-cyan-400"></i>
+          </div>
+        </div>
+        <div>
+          <h1 class="font-display font-extrabold text-xl sm:text-2xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-red-400 via-yellow-300 to-cyan-400">
+            CONNECT 4
+          </h1>
+          <p class="text-xs text-slate-400 hidden sm:block">NEON ARCADE EDITION</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Controls -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Audio Mute Button -->
+        <button id="audio-toggle-btn" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500" title="Toggle Sound (Mute/Unmute)">
+          <i id="audio-icon" data-lucide="volume-2" class="w-5 h-5"></i>
+        </button>
+        <!-- Undo Button -->
+        <button id="undo-btn" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-cyan-500" title="Undo Move">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+          <span class="text-xs font-semibold hidden md:inline">Undo</span>
+        </button>
+        <!-- Reset Match Button -->
+        <button id="reset-match-btn" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition border border-red-500/30 focus:outline-none focus:ring-2 focus:ring-red-500" title="Restart Game">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          <span class="text-xs font-semibold hidden md:inline">Restart</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN APPLICATION CONTENT -->
+  <main class="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-6 flex flex-col lg:flex-row gap-6 items-center lg:items-start justify-center">
+
+    <!-- LEFT / MAIN COLUMN: BOARD & DROP PREVIEW -->
+    <div class="w-full lg:flex-1 flex flex-col items-center">
+
+      <!-- TURN & TIMER STATUS BAR -->
+      <div class="w-full max-w-[560px] glass-panel rounded-2xl p-3 mb-4 flex items-center justify-between shadow-xl">
+        <!-- Player 1 Status -->
+        <div id="p1-card" class="flex items-center gap-2.5 p-2 rounded-xl transition-all duration-300 border border-transparent">
+          <div class="w-8 h-8 rounded-full bg-neonRed shadow-glow-red flex items-center justify-center text-slate-950 font-bold text-sm">P1</div>
+          <div>
+            <div id="p1-label" class="text-xs text-slate-400 font-medium">Player 1</div>
+            <div id="p1-score" class="font-display font-bold text-lg text-slate-100">0</div>
+          </div>
+        </div>
+
+        <!-- Timer / Turn Indicator Center -->
+        <div class="flex flex-col items-center px-2">
+          <div id="turn-badge" class="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 mb-1 animate-pulse">
+            Red's Turn
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-400 text-xs font-mono">
+            <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span id="timer-display">00:00</span>
+          </div>
+        </div>
+
+        <!-- Player 2 / AI Status -->
+        <div id="p2-card" class="flex items-center gap-2.5 p-2 rounded-xl transition-all duration-300 border border-transparent flex-row-reverse text-right">
+          <div class="w-8 h-8 rounded-full bg-neonYellow shadow-glow-yellow flex items-center justify-center text-slate-950 font-bold text-sm">P2</div>
+          <div>
+            <div id="p2-label" class="text-xs text-slate-400 font-medium">Player 2</div>
+            <div id="p2-score" class="font-display font-bold text-lg text-slate-100">0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOP COLUMN SELECTION INDICATOR ROW -->
+      <div id="column-indicators" class="w-full max-w-[560px] grid grid-cols-7 gap-1.5 sm:gap-2 px-3 mb-1">
+        <!-- 7 Column preview slots generated dynamic via JS -->
+      </div>
+
+      <!-- CONNECT 4 GAME BOARD CONTAINER -->
+      <div class="relative w-full max-w-[560px] aspect-[7/6] glass-board rounded-3xl p-3 sm:p-4 shadow-2xl border border-slate-700/60 overflow-hidden">
+        
+        <!-- Interactive Invisible Touch/Click Columns Overlay -->
+        <div id="board-columns-overlay" class="absolute inset-3 sm:inset-4 z-30 grid grid-cols-7 gap-1.5 sm:gap-2">
+          <!-- 7 Invisible interactive columns -->
+        </div>
+
+        <!-- Board Grid Slots (6 rows x 7 cols) -->
+        <div id="board-grid" class="w-full h-full grid grid-cols-7 grid-rows-6 gap-1.5 sm:gap-2">
+          <!-- 42 Cell holes dynamically created -->
+        </div>
+
+        <!-- Layer for Animated Dropping Discs -->
+        <div id="anim-layer" class="absolute inset-3 sm:inset-4 pointer-events-none z-20"></div>
+
+        <!-- Game Over Modal Overlay -->
+        <div id="game-over-overlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md z-40 flex flex-col items-center justify-center p-6 transition-all duration-500 opacity-0 pointer-events-none">
+          <div id="winner-crown" class="w-16 h-16 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 flex items-center justify-center mb-3 shadow-glow-yellow animate-bounce">
+            <i data-lucide="trophy" class="w-9 h-9"></i>
+          </div>
+          <h2 id="game-over-title" class="font-display font-extrabold text-2xl sm:text-3xl tracking-wide text-center text-white mb-2">
+            PLAYER 1 WINS!
+          </h2>
+          <p id="game-over-subtitle" class="text-sm text-slate-400 mb-6 text-center">Connected 4 in a row!</p>
+          <div class="flex flex-wrap gap-3 justify-center">
+            <button id="play-again-btn" class="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold tracking-wide shadow-glow-cyan transition-all transform hover:-translate-y-0.5 active:translate-y-0">
+              Play Next Round
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: GAME CONTROLS, SETTINGS & HISTORY -->
+    <div class="w-full lg:w-80 flex flex-col gap-5">
+      
+      <!-- MODE & DIFFICULTY PANEL -->
+      <div class="glass-panel rounded-2xl p-4 shadow-lg flex flex-col gap-4">
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i> Game Setup
+        </h3>
+
+        <!-- Mode Switcher Buttons -->
+        <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/80 rounded-xl border border-slate-800">
+          <button id="mode-pvp-btn" class="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 bg-cyan-500 text-slate-950 shadow-sm">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i> 2 Player
+          </button>
+          <button id="mode-ai-btn" class="py-2 px-3 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5">
+            <i data-lucide="bot" class="w-3.5 h-3.5"></i> vs AI
+          </button>
+        </div>
+
+        <!-- AI Difficulty Options (Hidden in PvP) -->
+        <div id="ai-difficulty-container" class="hidden flex-col gap-2">
+          <label class="text-xs text-slate-400 font-medium">AI Difficulty</label>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button data-diff="easy" class="diff-btn py-1.5 rounded-lg border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition">
+              Easy
+            </button>
+            <button data-diff="medium" class="diff-btn py-1.5 rounded-lg border border-cyan-500/50 bg-cyan-500/10 text-xs font-semibold text-cyan-400 transition">
+              Medium
+            </button>
+            <button data-diff="hard" class="diff-btn py-1.5 rounded-lg border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition">
+              Unbeatable
+            </button>
+          </div>
+        </div>
+
+        <!-- Reset Score Stats -->
+        <button id="reset-scores-btn" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold transition flex items-center justify-center gap-2">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Reset All Scores
+        </button>
+      </div>
+
+      <!-- MOVE HISTORY LOG -->
+      <div class="glass-panel rounded-2xl p-4 shadow-lg flex flex-col flex-1 min-h-[220px] max-h-[300px]">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4 text-cyan-400"></i> Move History
+          </h3>
+          <span id="move-count" class="text-xs font-mono text-slate-400">0 Moves</span>
+        </div>
+
+        <div id="history-log" class="flex-1 overflow-y-auto pr-1 flex flex-col gap-1.5 text-xs font-mono">
+          <div class="text-slate-500 text-center py-6 italic">No moves played yet.</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="w-full border-t border-slate-800/80 py-3 px-4 text-center text-xs text-slate-500">
+    Connect 4 Arcade &bull; Crafted with HTML5 & Tailwind CSS
+  </footer>
+
+  <!-- JAVASCRIPT LOGIC & ENGINE -->
+  <script>
+    /* ===================================================================
+       1. GAME STATE & CONSTANTS
+       =================================================================== */
+    const ROWS = 6;
+    const COLS = 7;
+    const EMPTY = 0;
+    const PLAYER1 = 1; // Red
+    const PLAYER2 = 2; // Yellow
+
+    let board = [];
+    let currentPlayer = PLAYER1;
+    let gameActive = false;
+    let isVsAI = false;
+    let aiDifficulty = 'medium'; // 'easy', 'medium', 'hard'
+    let moveHistory = []; // Array of { player, col, row }
+    let scores = { p1: 0, p2: 0 };
+    let timerInterval = null;
+    let secondsElapsed = 0;
+    let isAiThinking = false;
+    let soundEnabled = true;
+
+    /* ===================================================================
+       2. SOUND EFFECTS (SYNTHESIZED WITH WEB AUDIO API)
+       =================================================================== */
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSound(type) {
+      if (!soundEnabled) return;
+      initAudio();
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+
+      if (type === 'drop') {
+        // Wooden/plastic thump sound
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'hover') {
+        // High soft tick
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(600, now);
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.04);
+      } else if (type === 'win') {
+        // Victory chime chord
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+          gain.gain.setValueAtTime(0, now + idx * 0.08);
+          gain.gain.linearRampToValueAtTime(0.3, now + idx * 0.08 + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.4);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start(now + idx * 0.08);
+          osc.stop(now + idx * 0.08 + 0.4);
+        });
+      } else if (type === 'click') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, now);
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.05);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.05);
+      }
+    }
+
+    /* ===================================================================
+       3. DOM ELEMENTS
+       =================================================================== */
+    const boardGridEl = document.getElementById('board-grid');
+    const boardOverlayEl = document.getElementById('board-columns-overlay');
+    const columnIndicatorsEl = document.getElementById('column-indicators');
+    const animLayerEl = document.getElementById('anim-layer');
+    const turnBadgeEl = document.getElementById('turn-badge');
+    const timerDisplayEl = document.getElementById('timer-display');
+    const p1CardEl = document.getElementById('p1-card');
+    const p2CardEl = document.getElementById('p2-card');
+    const p1ScoreEl = document.getElementById('p1-score');
+    const p2ScoreEl = document.getElementById('p2-score');
+    const p2LabelEl = document.getElementById('p2-label');
+    const historyLogEl = document.getElementById('history-log');
+    const moveCountEl = document.getElementById('move-count');
+    const gameOverOverlayEl = document.getElementById('game-over-overlay');
+    const gameOverTitleEl = document.getElementById('game-over-title');
+    const gameOverSubtitleEl = document.getElementById('game-over-subtitle');
+
+    const modePvpBtn = document.getElementById('mode-pvp-btn');
+    const modeAiBtn = document.getElementById('mode-ai-btn');
+    const aiDifficultyContainer = document.getElementById('ai-difficulty-container');
+    const diffBtns = document.querySelectorAll('.diff-btn');
+    const undoBtn = document.getElementById('undo-btn');
+    const resetMatchBtn = document.getElementById('reset-match-btn');
+    const resetScoresBtn = document.getElementById('reset-scores-btn');
+    const playAgainBtn = document.getElementById('play-again-btn');
+    const audioToggleBtn = document.getElementById('audio-toggle-btn');
+    const audioIcon = document.getElementById('audio-icon');
+
+    /* ===================================================================
+       4. INIT & BOARD RENDER SETUP
+       =================================================================== */
+    function initApp() {
+      lucide.createIcons();
+      buildGridDOM();
+      bindEvents();
+      startNewGame();
+    }
+
+    function buildGridDOM() {
+      boardGridEl.innerHTML = '';
+      boardOverlayEl.innerHTML = '';
+      columnIndicatorsEl.innerHTML = '';
+
+      // Build column top indicators
+      for (let c = 0; c < COLS; c++) {
+        const ind = document.createElement('div');
+        ind.className = 'flex justify-center items-center h-8 cursor-pointer group';
+        ind.id = `indicator-col-${c}`;
+        ind.innerHTML = `<div class="w-6 h-6 rounded-full opacity-0 transition-opacity duration-200 transform group-hover:opacity-100 flex items-center justify-center">
+          <i data-lucide="chevron-down" class="w-5 h-5 text-cyan-400 animate-bounce"></i>
+        </div>`;
+        columnIndicatorsEl.appendChild(ind);
+      }
+
+      // Build grid cells and overlay columns
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = document.createElement('div');
+          cell.id = `cell-${r}-${c}`;
+          cell.className = 'w-full h-full rounded-full bg-slate-950/90 hole-shadow border border-slate-800/60 relative flex items-center justify-center transition-all duration-300';
+          boardGridEl.appendChild(cell);
+        }
+      }
+
+      // Build invisible interactive columns overlay
+      for (let c = 0; c < COLS; c++) {
+        const colOverlay = document.createElement('div');
+        colOverlay.className = 'w-full h-full cursor-pointer flex flex-col justify-end group';
+        colOverlay.dataset.col = c;
+        boardOverlayEl.appendChild(colOverlay);
+      }
+      
+      lucide.createIcons();
+    }
+
+    function startNewGame() {
+      board = Array(ROWS).fill(null).map(() => Array(COLS).fill(EMPTY));
+      currentPlayer = PLAYER1;
+      gameActive = true;
+      moveHistory = [];
+      isAiThinking = false;
+
+      // Reset timer
+      clearInterval(timerInterval);
+      secondsElapsed = 0;
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        if (gameActive) {
+          secondsElapsed++;
+          updateTimerDisplay();
+        }
+      }, 1000);
+
+      // Hide modal
+      gameOverOverlayEl.classList.add('opacity-0', 'pointer-events-none');
+
+      // Clear render
+      renderBoard();
+      updateTurnUI();
+      updateHistoryUI();
+      updateUndoButtonState();
+    }
+
+    function updateTimerDisplay() {
+      const mins = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
+      const secs = (secondsElapsed % 60).toString().padStart(2, '0');
+      timerDisplayEl.textContent = `${mins}:${secs}`;
+    }
+
+    /* ===================================================================
+       5. BOARD RENDERING & PREVIEW
+       =================================================================== */
+    function renderBoard() {
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cell = document.getElementById(`cell-${r}-${c}`);
+          const cellVal = board[r][c];
+
+          // Clear inner disc element if any
+          cell.innerHTML = '';
+          cell.classList.remove('winning-disc');
+
+          if (cellVal !== EMPTY) {
+            const disc = document.createElement('div');
+            disc.className = `w-full h-full rounded-full ${
+              cellVal === PLAYER1 
+                ? 'bg-neonRed shadow-glow-red' 
+                : 'bg-neonYellow shadow-glow-yellow'
+            } border-2 border-white/20`;
+            cell.appendChild(disc);
+          }
+        }
+      }
+    }
+
+    function showColumnPreview(col) {
+      if (!gameActive || isAiThinking) return;
+      
+      const targetRow = getLowestEmptyRow(board, col);
+      if (targetRow === -1) return;
+
+      // Update Top Indicator Chevron color
+      const ind = document.getElementById(`indicator-col-${col}`);
+      if (ind) {
+        const iconContainer = ind.firstElementChild;
+        iconContainer.style.opacity = '1';
+        const chev = iconContainer.querySelector('i');
+        if (chev) {
+          chev.style.color = currentPlayer === PLAYER1 ? '#ff2a5f' : '#ffe600';
+        }
+      }
+
+      // Show semi-transparent disc in target slot
+      const targetCell = document.getElementById(`cell-${targetRow}-${col}`);
+      if (targetCell && board[targetRow][col] === EMPTY) {
+        targetCell.innerHTML = `<div class="w-full h-full rounded-full ${
+          currentPlayer === PLAYER1 ? 'bg-neonRed/40 border-neonRed' : 'bg-neonYellow/40 border-neonYellow'
+        } border-2 border-dashed transition-all transform scale-90"></div>`;
+      }
+    }
+
+    function clearColumnPreview(col) {
+      const ind = document.getElementById(`indicator-col-${col}`);
+      if (ind) {
+        ind.firstElementChild.style.opacity = '0';
+      }
+
+      const targetRow = getLowestEmptyRow(board, col);
+      if (targetRow !== -1) {
+        const cell = document.getElementById(`cell-${targetRow}-${col}`);
+        if (cell && board[targetRow][col] === EMPTY) {
+          cell.innerHTML = '';
+        }
+      }
+    }
+
+    /* ===================================================================
+       6. CORE GAME LOGIC & ANIMATED DROP
+       =================================================================== */
+    function getLowestEmptyRow(b, col) {
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (b[r][col] === EMPTY) return r;
+      }
+      return -1;
+    }
+
+    function makeMove(col) {
+      if (!gameActive || isAiThinking) return;
+
+      const row = getLowestEmptyRow(board, col);
+      if (row === -1) return; // Column full
+
+      // Temporarily block UI interaction
+      isAiThinking = true;
+
+      // Clear preview in slot
+      clearColumnPreview(col);
+
+      // Trigger Drop Animation
+      animateDiscDrop(col, row, currentPlayer, () => {
+        // Update Actual Board Logic State
+        board[row][col] = currentPlayer;
+        moveHistory.push({ player: currentPlayer, col, row });
+
+        playSound('drop');
+        renderBoard();
+        updateHistoryUI();
+
+        // Check Win/Draw
+        const winningCells = checkWin(board, currentPlayer);
+        if (winningCells) {
+          handleWin(currentPlayer, winningCells);
+          isAiThinking = false;
+          return;
+        }
+
+        if (checkDraw(board)) {
+          handleDraw();
+          isAiThinking = false;
+          return;
+        }
+
+        // Switch Turns
+        currentPlayer = currentPlayer === PLAYER1 ? PLAYER2 : PLAYER1;
+        updateTurnUI();
+        updateUndoButtonState();
+
+        isAiThinking = false;
+
+        // Trigger AI if applicable
+        if (isVsAI && currentPlayer === PLAYER2 && gameActive) {
+          triggerAiTurn();
+        }
+      });
+    }
+
+    function animateDiscDrop(col, targetRow, player, callback) {
+      // Calculate start and end offsets inside canvas container
+      const colOverlay = boardOverlayEl.children[col];
+      const targetCell = document.getElementById(`cell-${targetRow}-${col}`);
+      
+      const colRect = colOverlay.getBoundingClientRect();
+      const cellRect = targetCell.getBoundingClientRect();
+      const containerRect = animLayerEl.getBoundingClientRect();
+
+      const disc = document.createElement('div');
+      disc.className = `absolute rounded-full ${
+        player === PLAYER1 ? 'bg-neonRed shadow-glow-red' : 'bg-neonYellow shadow-glow-yellow'
+      } border-2 border-white/20 z-30`;
+
+      const width = cellRect.width;
+      const height = cellRect.height;
+      const startX = cellRect.left - containerRect.left;
+      const startY = -height * 1.5;
+      const endY = cellRect.top - containerRect.top;
+
+      disc.style.width = `${width}px`;
+      disc.style.height = `${height}px`;
+      disc.style.left = `${startX}px`;
+      disc.style.top = `${startY}px`;
+
+      animLayerEl.appendChild(disc);
+
+      // Perform smooth JS Animation using requestAnimationFrame with bounce
+      const startTime = performance.now();
+      const duration = 380; // ms
+
+      function animate(time) {
+        let elapsed = time - startTime;
+        let progress = Math.min(elapsed / duration, 1);
+
+        // Ease in bounce equation
+        let easeY = progress * progress; // Quadratic acceleration drop
+
+        let currentY = startY + (endY - startY) * easeY;
+        disc.style.top = `${currentY}px`;
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          // Bounce effect at bottom
+          disc.style.top = `${endY}px`;
+          disc.classList.add('animate-drop');
+          setTimeout(() => {
+            disc.remove();
+            callback();
+          }, 120);
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    /* ===================================================================
+       7. WIN & DRAW CHECKING
+       =================================================================== */
+    function checkWin(b, player) {
+      // Horizontal
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          if (b[r][c] === player && b[r][c+1] === player && b[r][c+2] === player && b[r][c+3] === player) {
+            return [[r,c], [r,c+1], [r,c+2], [r,c+3]];
+          }
+        }
+      }
+
+      // Vertical
+      for (let r = 0; r <= ROWS - 4; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (b[r][c] === player && b[r+1][c] === player && b[r+2][c] === player && b[r+3][c] === player) {
+            return [[r,c], [r+1,c], [r+2,c], [r+3,c]];
+          }
+        }
+      }
+
+      // Positive Diagonal (Bottom-Left to Top-Right)
+      for (let r = 3; r < ROWS; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          if (b[r][c] === player && b[r-1][c+1] === player && b[r-2][c+2] === player && b[r-3][c+3] === player) {
+            return [[r,c], [r-1,c+1], [r-2,c+2], [r-3,c+3]];
+          }
+        }
+      }
+
+      // Negative Diagonal (Top-Left to Bottom-Right)
+      for (let r = 0; r <= ROWS - 4; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          if (b[r][c] === player && b[r+1][c+1] === player && b[r+2][c+2] === player && b[r+3][c+3] === player) {
+            return [[r,c], [r+1,c+1], [r+2,c+2], [r+3,c+3]];
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function checkDraw(b) {
+      return b[0].every(cell => cell !== EMPTY);
+    }
+
+    function handleWin(player, cells) {
+      gameActive = false;
+      clearInterval(timerInterval);
+
+      // Highlight winning cells
+      cells.forEach(([r, c]) => {
+        const cell = document.getElementById(`cell-${r}-${c}`);
+        if (cell) cell.classList.add('winning-disc');
+      });
+
+      // Update scores
+      if (player === PLAYER1) scores.p1++;
+      else scores.p2++;
+      updateScoresUI();
+
+      playSound('win');
+
+      // Trigger Confetti Celebration
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+      }
+
+      // Show GameOver Overlay
+      setTimeout(() => {
+        const winnerName = player === PLAYER1 ? 'Player 1 (Red)' : (isVsAI ? 'AI Overlord' : 'Player 2 (Yellow)');
+        gameOverTitleEl.textContent = `${winnerName.toUpperCase()} WINS!`;
+        gameOverSubtitleEl.textContent = `Completed 4-in-a-row in ${moveHistory.length} moves!`;
+        gameOverOverlayEl.classList.remove('opacity-0', 'pointer-events-none');
+      }, 700);
+    }
+
+    function handleDraw() {
+      gameActive = false;
+      clearInterval(timerInterval);
+
+      setTimeout(() => {
+        gameOverTitleEl.textContent = "IT'S A DRAW!";
+        gameOverSubtitleEl.textContent = "The board is completely filled!";
+        gameOverOverlayEl.classList.remove('opacity-0', 'pointer-events-none');
+      }, 500);
+    }
+
+    /* ===================================================================
+       8. AI ENGINE (EASY, MEDIUM, MINIMAX HARD)
+       =================================================================== */
+    function triggerAiTurn() {
+      isAiThinking = true;
+      turnBadgeEl.textContent = "AI Thinking...";
+
+      const delay = Math.floor(Math.random() * 300) + 400; // Realistic thinking pause
+
+      setTimeout(() => {
+        let chosenCol = 0;
+
+        if (aiDifficulty === 'easy') {
+          chosenCol = getEasyMove();
+        } else if (aiDifficulty === 'medium') {
+          chosenCol = getMediumMove();
+        } else {
+          chosenCol = getHardMove();
+        }
+
+        isAiThinking = false;
+        makeMove(chosenCol);
+      }, delay);
+    }
+
+    // Easy AI: Random valid move
+    function getEasyMove() {
+      const validCols = getValidColumns(board);
+      return validCols[Math.floor(Math.random() * validCols.length)];
+    }
+
+    // Medium AI: Checks instant wins/blocks, else weighted heuristic
+    function getMediumMove() {
+      const validCols = getValidColumns(board);
+
+      // 1. Instant Win for AI
+      for (let col of validCols) {
+        let tempBoard = copyBoard(board);
+        let r = getLowestEmptyRow(tempBoard, col);
+        tempBoard[r][col] = PLAYER2;
+        if (checkWin(tempBoard, PLAYER2)) return col;
+      }
+
+      // 2. Instant Block Player 1 Win
+      for (let col of validCols) {
+        let tempBoard = copyBoard(board);
+        let r = getLowestEmptyRow(tempBoard, col);
+        tempBoard[r][col] = PLAYER1;
+        if (checkWin(tempBoard, PLAYER1)) return col;
+      }
+
+      // 3. Otherwise Pick Center Preferred Random
+      const centerOrder = [3, 2, 4, 1, 5, 0, 6];
+      for (let col of centerOrder) {
+        if (validCols.includes(col)) return col;
+      }
+
+      return validCols[0];
+    }
+
+    // Hard AI: Minimax algorithm with Alpha-Beta Pruning
+    function getHardMove() {
+      const validCols = getValidColumns(board);
+
+      // Instant win/block check for max efficiency
+      for (let col of validCols) {
+        let tempBoard = copyBoard(board);
+        let r = getLowestEmptyRow(tempBoard, col);
+        tempBoard[r][col] = PLAYER2;
+        if (checkWin(tempBoard, PLAYER2)) return col;
+      }
+      for (let col of validCols) {
+        let tempBoard = copyBoard(board);
+        let r = getLowestEmptyRow(tempBoard, col);
+        tempBoard[r][col] = PLAYER1;
+        if (checkWin(tempBoard, PLAYER1)) return col;
+      }
+
+      let bestScore = -Infinity;
+      let bestCol = validCols[Math.floor(Math.random() * validCols.length)];
+      const searchDepth = 5; // Balanced depth for web performance
+
+      // Prioritize center columns for better pruning
+      const preferredCols = [3, 2, 4, 1, 5, 0, 6].filter(c => validCols.includes(c));
+
+      for (let col of preferredCols) {
+        let tempBoard = copyBoard(board);
+        let r = getLowestEmptyRow(tempBoard, col);
+        tempBoard[r][col] = PLAYER2;
+
+        let score = minimax(tempBoard, searchDepth - 1, -Infinity, Infinity, false);
+        if (score > bestScore) {
+          bestScore = score;
+          bestCol = col;
+        }
+      }
+
+      return bestCol;
+    }
+
+    function minimax(b, depth, alpha, beta, isMaximizing) {
+      const p1Win = checkWin(b, PLAYER1);
+      const p2Win = checkWin(b, PLAYER2);
+      const isFull = checkDraw(b);
+
+      if (p2Win) return 1000000 + depth;
+      if (p1Win) return -1000000 - depth;
+      if (isFull || depth === 0) return evaluateBoard(b);
+
+      const validCols = getValidColumns(b);
+      const preferredCols = [3, 2, 4, 1, 5, 0, 6].filter(c => validCols.includes(c));
+
+      if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (let col of preferredCols) {
+          let tempBoard = copyBoard(b);
+          let r = getLowestEmptyRow(tempBoard, col);
+          tempBoard[r][col] = PLAYER2;
+
+          let evalVal = minimax(tempBoard, depth - 1, alpha, beta, false);
+          maxEval = Math.max(maxEval, evalVal);
+          alpha = Math.max(alpha, evalVal);
+          if (beta <= alpha) break; // Pruning
+        }
+        return maxEval;
+      } else {
+        let minEval = Infinity;
+        for (let col of preferredCols) {
+          let tempBoard = copyBoard(b);
+          let r = getLowestEmptyRow(tempBoard, col);
+          tempBoard[r][col] = PLAYER1;
+
+          let evalVal = minimax(tempBoard, depth - 1, alpha, beta, true);
+          minEval = Math.min(minEval, evalVal);
+          beta = Math.min(beta, evalVal);
+          if (beta <= alpha) break; // Pruning
+        }
+        return minEval;
+      }
+    }
+
+    // Heuristic Evaluation Function for Connect 4
+    function evaluateBoard(b) {
+      let score = 0;
+
+      // Center Column Preference Score
+      let centerCount = 0;
+      for (let r = 0; r < ROWS; r++) {
+        if (b[r][3] === PLAYER2) centerCount++;
+      }
+      score += centerCount * 6;
+
+      // Evaluate all 4-length windows
+      // Horizontal
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          let window = [b[r][c], b[r][c+1], b[r][c+2], b[r][c+3]];
+          score += evaluateWindow(window);
+        }
+      }
+      // Vertical
+      for (let r = 0; r <= ROWS - 4; r++) {
+        for (let c = 0; c < COLS; c++) {
+          let window = [b[r][c], b[r+1][c], b[r+2][c], b[r+3][c]];
+          score += evaluateWindow(window);
+        }
+      }
+      // Positive Diagonals
+      for (let r = 3; r < ROWS; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          let window = [b[r][c], b[r-1][c+1], b[r-2][c+2], b[r-3][c+3]];
+          score += evaluateWindow(window);
+        }
+      }
+      // Negative Diagonals
+      for (let r = 0; r <= ROWS - 4; r++) {
+        for (let c = 0; c <= COLS - 4; c++) {
+          let window = [b[r][c], b[r+1][c+1], b[r+2][c+2], b[r+3][c+3]];
+          score += evaluateWindow(window);
+        }
+      }
+
+      return score;
+    }
+
+    function evaluateWindow(window) {
+      let score = 0;
+      let aiCount = window.filter(cell => cell === PLAYER2).length;
+      let player1Count = window.filter(cell => cell === PLAYER1).length;
+      let emptyCount = window.filter(cell => cell === EMPTY).length;
+
+      if (aiCount === 4) score += 100;
+      else if (aiCount === 3 && emptyCount === 1) score += 10;
+      else if (aiCount === 2 && emptyCount === 2) score += 4;
+
+      if (player1Count === 3 && emptyCount === 1) score -= 80; // Block Player 1 win strongly
+
+      return score;
+    }
+
+    function getValidColumns(b) {
+      let cols = [];
+      for (let c = 0; c < COLS; c++) {
+        if (b[0][c] === EMPTY) cols.push(c);
+      }
+      return cols;
+    }
+
+    function copyBoard(b) {
+      return b.map(row => [...row]);
+    }
+
+    /* ===================================================================
+       9. UI UPDATES & INTERACTION LOGIC
+       =================================================================== */
+    function updateTurnUI() {
+      if (!gameActive) return;
+
+      if (currentPlayer === PLAYER1) {
+        turnBadgeEl.textContent = "Red's Turn";
+        turnBadgeEl.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse";
+        p1CardEl.classList.add('bg-red-500/10', 'border-red-500/40');
+        p2CardEl.classList.remove('bg-yellow-500/10', 'border-yellow-500/40');
+      } else {
+        turnBadgeEl.textContent = isVsAI ? "AI's Turn" : "Yellow's Turn";
+        turnBadgeEl.className = "px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 animate-pulse";
+        p2CardEl.classList.add('bg-yellow-500/10', 'border-yellow-500/40');
+        p1CardEl.classList.remove('bg-red-500/10', 'border-red-500/40');
+      }
+    }
+
+    function updateScoresUI() {
+      p1ScoreEl.textContent = scores.p1;
+      p2ScoreEl.textContent = scores.p2;
+    }
+
+    function updateHistoryUI() {
+      moveCountEl.textContent = `${moveHistory.length} Moves`;
+      historyLogEl.innerHTML = '';
+
+      if (moveHistory.length === 0) {
+        historyLogEl.innerHTML = `<div class="text-slate-500 text-center py-6 italic">No moves played yet.</div>`;
+        return;
+      }
+
+      // Render moves list backwards
+      [...moveHistory].reverse().forEach((mv, idx) => {
+        const moveNum = moveHistory.length - idx;
+        const playerStr = mv.player === PLAYER1 ? 'Red' : (isVsAI ? 'AI' : 'Yellow');
+        const badgeColor = mv.player === PLAYER1 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-800/80';
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500 text-[10px]">#${moveNum}</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${badgeColor}">${playerStr}</span>
+          </div>
+          <span class="text-slate-300">Col ${mv.col + 1}, Row ${6 - mv.row}</span>
+        `;
+        historyLogEl.appendChild(item);
+      });
+    }
+
+    function updateUndoButtonState() {
+      if (!gameActive || moveHistory.length === 0 || isAiThinking) {
+        undoBtn.disabled = true;
+      } else {
+        undoBtn.disabled = false;
+      }
+    }
+
+    function handleUndo() {
+      if (!gameActive || moveHistory.length === 0 || isAiThinking) return;
+
+      playSound('click');
+
+      if (isVsAI) {
+        // In AI mode, undo twice to step back to human turn (if AI has moved)
+        if (moveHistory.length >= 2) {
+          popLastMove();
+          popLastMove();
+          currentPlayer = PLAYER1;
+        } else if (moveHistory.length === 1 && moveHistory[0].player === PLAYER1) {
+          popLastMove();
+          currentPlayer = PLAYER1;
+        }
+      } else {
+        // Single undo for 2 Player mode
+        const lastMove = popLastMove();
+        if (lastMove) {
+          currentPlayer = lastMove.player;
+        }
+      }
+
+      renderBoard();
+      updateTurnUI();
+      updateHistoryUI();
+      updateUndoButtonState();
+    }
+
+    function popLastMove() {
+      const lastMove = moveHistory.pop();
+      if (lastMove) {
+        board[lastMove.row][lastMove.col] = EMPTY;
+      }
+      return lastMove;
+    }
+
+    /* ===================================================================
+       10. EVENT LISTENERS
+       =================================================================== */
+    function bindEvents() {
+      // Column Overlay Hover & Click Events
+      const overlayCols = boardOverlayEl.children;
+      for (let c = 0; c < COLS; c++) {
+        const colEl = overlayCols[c];
+
+        colEl.addEventListener('mouseenter', () => {
+          playSound('hover');
+          showColumnPreview(c);
+        });
+
+        colEl.addEventListener('mouseleave', () => {
+          clearColumnPreview(c);
+        });
+
+        colEl.addEventListener('click', () => {
+          makeMove(c);
+        });
+
+        // Touch support for mobile devices
+        colEl.addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          makeMove(c);
+        }, { passive: false });
+      }
+
+      // Mode Selection
+      modePvpBtn.addEventListener('click', () => {
+        if (!isVsAI) return;
+        playSound('click');
+        isVsAI = false;
+        modePvpBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 bg-cyan-500 text-slate-950 shadow-sm";
+        modeAiBtn.className = "py-2 px-3 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5";
+        aiDifficultyContainer.classList.add('hidden');
+        aiDifficultyContainer.classList.remove('flex');
+        p2LabelEl.textContent = "Player 2";
+        startNewGame();
+      });
+
+      modeAiBtn.addEventListener('click', () => {
+        if (isVsAI) return;
+        playSound('click');
+        isVsAI = true;
+        modeAiBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 bg-cyan-500 text-slate-950 shadow-sm";
+        modePvpBtn.className = "py-2 px-3 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-200 transition flex items-center justify-center gap-1.5";
+        aiDifficultyContainer.classList.remove('hidden');
+        aiDifficultyContainer.classList.add('flex');
+        p2LabelEl.textContent = `AI (${aiDifficulty.toUpperCase()})`;
+        startNewGame();
+      });
+
+      // AI Difficulty Selector
+      diffBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          playSound('click');
+          diffBtns.forEach(b => {
+            b.className = "diff-btn py-1.5 rounded-lg border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition";
+          });
+          e.currentTarget.className = "diff-btn py-1.5 rounded-lg border border-cyan-500/50 bg-cyan-500/10 text-xs font-semibold text-cyan-400 transition";
+          aiDifficulty = e.currentTarget.dataset.diff;
+          if (isVsAI) {
+            p2LabelEl.textContent = `AI (${aiDifficulty.toUpperCase()})`;
+          }
+          startNewGame();
+        });
+      });
+
+      // Undo & Reset Buttons
+      undoBtn.addEventListener('click', handleUndo);
+      
+      resetMatchBtn.addEventListener('click', () => {
+        playSound('click');
+        startNewGame();
+      });
+
+      playAgainBtn.addEventListener('click', () => {
+        playSound('click');
+        startNewGame();
+      });
+
+      resetScoresBtn.addEventListener('click', () => {
+        playSound('click');
+        scores.p1 = 0;
+        scores.p2 = 0;
+        updateScoresUI();
+        startNewGame();
+      });
+
+      // Audio Toggle Button
+      audioToggleBtn.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        if (soundEnabled) {
+          audioIcon.setAttribute('data-lucide', 'volume-2');
+          audioToggleBtn.classList.remove('text-red-400');
+        } else {
+          audioIcon.setAttribute('data-lucide', 'volume-x');
+          audioToggleBtn.classList.add('text-red-400');
+        }
+        lucide.createIcons();
+      });
+    }
+
+    // Initialize Application when DOM ready
+    window.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
